@@ -1,0 +1,16 @@
+[Unit]
+Description=Homelab Control Room collect
+After=network-online.target
+[Service]
+Type=oneshot
+User=homelab-monitor
+Group=homelab-monitor
+WorkingDirectory=/opt/homelab-control-room
+ExecStart=/opt/homelab-control-room/.venv/bin/python -B /opt/homelab-control-room/telemetry/collect.py --profiles-file config/hosts.json --output data/metrics.json
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/homelab-control-room/data
+UMask=0077
+TimeoutStartSec=90
+Nice=10

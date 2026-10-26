@@ -1,0 +1,17 @@
+[Unit]
+Description=Homelab Control Room web
+After=network-online.target
+[Service]
+Type=simple
+User=homelab-monitor
+Group=homelab-monitor
+WorkingDirectory=/opt/homelab-control-room
+ExecStart=/opt/homelab-control-room/.venv/bin/python -B /opt/homelab-control-room/telemetry/server.py --data-dir data --port 8080
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/homelab-control-room/data
+UMask=0077
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

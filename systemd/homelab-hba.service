@@ -1,0 +1,12 @@
+[Unit]
+Description=Read-only host hba temperature sample
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -B /usr/local/lib/homelab-monitor/hba_temp.py
+TimeoutStartSec=90
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run

@@ -1,0 +1,22 @@
+{
+  "hosts": {
+    "compute-01": {
+      "node_name": "compute-01",
+      "host": "compute-01.example.invalid",
+      "fixed_probe": true,
+      "ssh": {
+        "user": "root",
+        "key_path": "/var/lib/homelab-control-room/.ssh/monitor_ed25519"
+      }
+    },
+    "backup-01": {
+      "node_name": "backup-01",
+      "host": "backup-01.example.invalid",
+      "fixed_probe": true,
+      "ssh": {
+        "user": "root",
+        "key_path": "/var/lib/homelab-control-room/.ssh/monitor_ed25519"
+      }
+    }
+  }
+}

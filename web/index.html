@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Read-only host, virtual machine, backup, and temperature monitoring for your homelab.">
+  <meta name="theme-color" content="#101923">
+  <title>Homelab Control Room</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="toolbar wrap">
+    <a class="wordmark" href="#overview">CONTROL ROOM <span>/ HOMELAB</span></a>
+    <div class="actions">
+      <button id="theme" type="button">Light mode</button>
+      <button id="density" type="button" aria-pressed="false">Compact view</button>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+  </header>
+  <main class="wrap">
+    <section id="overview" class="panel hero" aria-labelledby="overview-title">
+      <div class="hero-top"><div><p class="eyebrow">YOUR LAB, AT A GLANCE</p><h1 id="overview-title">Homelab overview</h1><p class="muted">Hosts, virtual machines, storage and cooling in one place.</p></div>
+        <span class="demo-badge">LOCAL MONITOR</span></div>
+      <div class="demo-note">Real infrastructure data. Use an authenticated reverse proxy before allowing remote access.</div>
+      <nav aria-label="Dashboard sections"><a href="#infrastructure">Infrastructure</a><a href="#virtual-machines">Virtual machines</a><a href="#services">Services</a><a href="#temperatures">Temperatures &amp; cooling</a></nav>
+      <div id="summary" class="metric-grid"></div>
+      <p id="update-status" class="small muted" role="status"></p>
+    </section>
+    <details class="panel" id="infrastructure" open><summary><span>Proxmox infrastructure</span><small>Configured nodes</small></summary><div id="hosts" class="host-grid"></div></details>
+    <details class="panel" id="virtual-machines" open><summary><span>Virtual machines</span><small>Configured guests</small></summary><div id="guests"></div></details>
+    <details class="panel" id="services" open><summary><span>Lab services</span><small>Your service bookmarks</small></summary><div id="service-list" class="service-grid"></div></details>
+    <section class="panel" id="temperatures" aria-labelledby="thermal-title">
+      <div class="section-heading"><div><p class="eyebrow">HARDWARE HEALTH</p><h2 id="thermal-title">Temperatures &amp; cooling</h2></div><label class="range-label" for="history-range">Sensor history<select id="history-range"><option value="24">Last 24 hours</option><option value="6">Last 6 hours</option></select></label></div>
+      <p class="muted small">Measured history · 10-minute sampling · temperatures in °C · fan speeds in RPM</p>
+      <div id="thermal-hosts"></div>
+    </section>
+  </main>
+  <footer class="wrap"><span>CONTROL ROOM <span class="muted">/ a read-only homelab monitor</span></span><a href="#overview">Back to overview ↑</a></footer>
+  <noscript><p class="wrap">Enable JavaScript to view host measurements.</p></noscript>
+</body>
+</html>

@@ -1,0 +1,9 @@
+[Unit]
+Description=Schedule Homelab Control Room history
+[Timer]
+OnBootSec=2min
+OnCalendar=*-*-* *:02/10:00
+Persistent=true
+AccuracySec=1s
+[Install]
+WantedBy=timers.target

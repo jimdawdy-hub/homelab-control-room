@@ -1,0 +1,7 @@
+{
+  "title": "My homelab",
+  "services": [
+    {"name": "Hypervisor", "description": "Virtualization management", "url": "https://compute-01.example.invalid/"},
+    {"name": "Drive health", "description": "Disk monitoring", "url": "https://disks.example.invalid/"}
+  ]
+}
