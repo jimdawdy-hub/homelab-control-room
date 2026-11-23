@@ -71,6 +71,19 @@ It writes `/run/homelab-thermal.json` atomically. SMART queries use standby chec
 are not deliberately woken. The fixed host probe reads this cache; it does not scan hardware every minute.
 Fan RPM requires a driver/BMC that exposes it. Some systems expose no board/fan/memory sensors.
 
+For an NVIDIA GPU passed through to a Linux guest, verify that the QEMU guest agent is running and
+`nvidia-smi` can report the GPU temperature inside the guest. Run the thermal probe on the Proxmox
+node that owns the guest. Replace `VMID` with the guest ID. Repeat the flag for each selected guest.
+
+```sh
+sudo python3 -B /usr/local/lib/homelab-monitor/thermal_probe.py --guest-gpu-vm VMID
+```
+
+The probe runs a fixed query in each selected running guest. Stopped guests are skipped. GPU IDs
+in telemetry are derived from hashed UUIDs. This option is independent of `--guest-metrics`.
+Host sensors take priority. The probe skips remaining guest queries when they could delay publication
+past the thermal service timeout.
+
 Optional HBA: install `hba_temp.py` beside the other probe scripts only after verifying a compatible
 StorCLI controller sensor. Obtain StorCLI from its vendor; no vendor binary is included here.
 
@@ -138,6 +151,15 @@ the manual sensor command succeeds. HBA units are optional and require the corre
 On the collector, install the collect, history and web units after the manual collection succeeds.
 Do not enable all templates blindly on every node.
 
+To schedule the optional GPU query, add a local override with `sudo systemctl edit homelab-thermal.service`.
+Replace `VMID` with the same ID you verified manually. Repeat the flag for any other verified guests.
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/bin/python3 -B /usr/local/lib/homelab-monitor/thermal_probe.py --guest-gpu-vm VMID
+```
+
 ```sh
 sudo systemctl daemon-reload
 # On a monitored host:
@@ -147,8 +169,9 @@ sudo systemctl enable --now homelab-collect.timer homelab-history.timer homelab-
 ```
 
 Collection runs every minute. Thermals run at minutes 00/10/20/etc.; history at 02/12/22/etc. after a
-resource refresh, to allow caches to settle. History retains daily JSONL files for 90 days. Existing
-records are not rewritten or fabricated. Verify a scheduled write and both next-run schedules:
+resource refresh, to allow caches to settle. History retains daily JSONL files for 90 days. New records
+store temperature, fan, and HBA readings with their host names and timestamps. Older full-snapshot
+records remain readable. Verify a scheduled write and both next-run schedules:
 
 ```sh
 systemctl list-timers 'homelab-*'

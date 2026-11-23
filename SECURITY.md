@@ -5,8 +5,9 @@ Bind loopback and put remote access behind your own authenticated TLS proxy or S
 no application login in this edition. Do not publish live data or use the demo's public hosting for it.
 
 The collector's SSH key must be dedicated and restricted to a fixed, root-owned probe. Retain strict
-host-key validation. Protect the local key/config and the account that can edit probe code. Optional
-guest-agent probes execute fixed Python inside running Linux guests; enable them deliberately.
+host-key validation. Protect the local key/config and the account that can edit probe code. Enable
+guest-agent probes deliberately. They run fixed Python for resource metrics or a fixed `nvidia-smi`
+query for GPU temperatures inside running Linux guests.
 
 Never commit real config, keys, known-host files, runtime snapshots, history, logs, or deployment backups.
 The audit script detects common secret formats and private IP ranges; pattern checks cannot prove

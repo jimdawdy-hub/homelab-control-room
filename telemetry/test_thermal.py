@@ -1,10 +1,13 @@
 import datetime
 import json
 from pathlib import Path
+import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+import history
 import host_probe
 import server
 import thermal_probe
@@ -71,13 +74,60 @@ class ThermalProbeTests(unittest.TestCase):
             self.assertIsNone(host_probe.read_thermal(output))
 
     def test_optional_probe_failures_preserve_hwmon_and_never_publish_raw_errors(self):
-        with patch.object(thermal_probe, 'hwmon_sensors', return_value=([{'id': 'cpu'}], [])), \
+        with patch.object(thermal_probe, 'guest_gpu_temperatures') as guest_gpu, \
+             patch.object(thermal_probe, 'hwmon_sensors', return_value=([{'id': 'cpu'}], [])), \
              patch.object(thermal_probe.shutil, 'which', return_value='/tool'), \
              patch.object(thermal_probe.subprocess, 'run', side_effect=OSError('PRIVATE ERROR')):
             result = thermal_probe.collect_thermal()
+        guest_gpu.assert_not_called()
         self.assertEqual(result['temperatures'], [{'id': 'cpu'}])
         self.assertEqual(result['errors'], ['BMC sensors unavailable', 'SMART sensor discovery unavailable'])
         self.assertNotIn('PRIVATE ERROR', json.dumps(result))
+
+    def test_gpu_temperatures_query_running_guests_and_keep_failures_local(self):
+        csv = '0, Example GPU, GPU-private-uuid, 44\n1, Example GPU, GPU-other, [N/A]\n'
+        responses = [
+            SimpleNamespace(stdout='status: stopped\n'),
+            SimpleNamespace(stdout='status: running\n'),
+            SimpleNamespace(stdout=json.dumps({'exited': 1, 'exitcode': 0, 'out-data': csv})),
+            SimpleNamespace(stdout='status: running\n'),
+            subprocess.TimeoutExpired('qm', 12),
+        ]
+        with patch.object(thermal_probe, 'hwmon_sensors', return_value=([{'id': 'cpu'}], [])), \
+             patch.object(thermal_probe.shutil, 'which', return_value=None), \
+             patch.object(thermal_probe.subprocess, 'run', side_effect=responses) as run:
+            result = thermal_probe.collect_thermal([123, 124, 125, 124])
+        self.assertEqual([call.args[0][:4] for call in run.call_args_list],
+                         [['qm', 'status', '123'], ['qm', 'status', '124'], ['qm', 'guest', 'exec', '124'],
+                          ['qm', 'status', '125'], ['qm', 'guest', 'exec', '125']])
+        self.assertEqual(result['temperatures'][0], {'id': 'cpu'})
+        sensor = result['temperatures'][1]
+        self.assertEqual((sensor['kind'], sensor['value_c'], sensor['label'], sensor['source']),
+                         ('gpu', 44, 'Example GPU · GPU 0', 'VM124 · nvidia-smi'))
+        self.assertNotIn('GPU-private-uuid', json.dumps(result))
+        self.assertEqual(len(result['temperatures']), 2)
+        self.assertEqual(result['errors'], ['GPU temperatures unavailable for VM125'])
+
+    def test_guest_gpu_budget_preserves_host_readings(self):
+        cpu = {'id': 'cpu'}
+        with patch.object(thermal_probe, 'hwmon_sensors', return_value=([cpu], [])), \
+             patch.object(thermal_probe.shutil, 'which', return_value=None), \
+             patch.object(thermal_probe.time, 'monotonic', side_effect=[0, 0, 70]), \
+             patch.object(thermal_probe, 'guest_gpu_temperatures', return_value=[]) as query:
+            result = thermal_probe.collect_thermal([123, 124])
+        query.assert_called_once_with(123)
+        self.assertEqual(result['temperatures'], [cpu])
+        self.assertIn('Remaining guest GPU queries skipped', result['errors'][0])
+
+    def test_guest_gpu_rejects_incomplete_or_failed_responses(self):
+        status = SimpleNamespace(stdout='status: running\n')
+        csv = '0, Example GPU, GPU-private-uuid, 44\n'
+        for reply in ([], {'pid': 999}, {'exited': 1, 'exitcode': 1, 'out-data': csv},
+                      {'exited': 1, 'exitcode': 0, 'out-data': None}):
+            with self.subTest(reply=reply), patch.object(thermal_probe.subprocess, 'run',
+                    side_effect=[status, SimpleNamespace(stdout=json.dumps(reply))]):
+                with self.assertRaises(ValueError):
+                    thermal_probe.guest_gpu_temperatures(123)
 
     def test_smart_uses_standby_checks_and_does_not_query_nvme_twice(self):
         devices = {'devices': [{'name': '/dev/sda', 'type': 'sat'}, {'name': '/dev/nvme0', 'type': 'nvme'}]}
@@ -98,12 +148,15 @@ class ThermalHistoryTests(unittest.TestCase):
                 'temperatures': [{'id': 'cpu', 'label': 'Tdie', 'source': 'k10temp', 'kind': 'cpu', 'value_c': 42}],
                 'fans': [{'label': 'FAN3', 'rpm': 9000}]},
                 'hba': {'roc_temp_c': 60, 'measured_at': measured}, 'private': 'DO_NOT_EXPOSE'}
-        record = json.dumps({'logged_at': now.isoformat(), 'snapshot': {'hosts': [host]}})
+        snapshot = {'hosts': [host]}
+        old_record = json.dumps({'logged_at': now.isoformat(), 'snapshot': snapshot})
         with tempfile.TemporaryDirectory() as folder:
-            history = Path(folder) / 'history'
-            history.mkdir()
-            (history / '2026-10-26.jsonl').write_text(record + '\nbroken\n' + record + '\n')
-            result = server.load_thermal_history(Path(folder), now)
+            data = Path(folder)
+            (data / 'history').mkdir()
+            (data / 'history' / '2026-10-26.jsonl').write_text(old_record + '\nbroken\n')
+            (data / 'metrics.json').write_text(json.dumps(snapshot))
+            history.log_snapshot(data, now)
+            result = server.load_thermal_history(data, now)
         self.assertEqual(result['interval_seconds'], 600)
         series = result['hosts'][0]['series']
         self.assertEqual([s['id'] for s in series], ['hba:roc', 'cpu'])

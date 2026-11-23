@@ -1,4 +1,6 @@
 """Read host hwmon, BMC and SMART sensors; publish one atomic ten-minute sample."""
+import argparse
+import csv
 import datetime
 import hashlib
 import json
@@ -9,8 +11,15 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 
 OUTPUT = Path('/run/homelab-thermal.json')
+GPU_QUERY = ['nvidia-smi', '--query-gpu=index,name,uuid,temperature.gpu',
+             '--format=csv,noheader,nounits']
+GPU_STATUS_TIMEOUT = 5
+GPU_QUERY_TIMEOUT = 12
+# Leave ten seconds to publish before homelab-thermal.service's 90-second timeout.
+GPU_COLLECTION_BUDGET_SECONDS = 80
 
 
 def reading(value, low=-100, high=200):
@@ -92,7 +101,37 @@ def run_json(arguments, timeout=10):
     return json.loads(result.stdout)
 
 
-def collect_thermal():
+def guest_gpu_temperatures(vmid):
+    status = subprocess.run(['qm', 'status', str(vmid)], capture_output=True, text=True,
+                            timeout=GPU_STATUS_TIMEOUT, check=True)
+    if status.stdout.strip() != 'status: running':
+        return []
+    result = subprocess.run(['qm', 'guest', 'exec', str(vmid), '--timeout', '10', '--', *GPU_QUERY],
+                            capture_output=True, text=True, timeout=GPU_QUERY_TIMEOUT, check=True)
+    data = json.loads(result.stdout)
+    if not isinstance(data, dict) or data.get('exited') != 1 or data.get('exitcode') != 0:
+        raise ValueError('Guest GPU query did not finish successfully')
+    output = data.get('out-data')
+    if not isinstance(output, str):
+        raise ValueError('Guest GPU query returned no text')
+    sensors = []
+    for fields in csv.reader(output.splitlines(), skipinitialspace=True):
+        if len(fields) != 4:
+            continue
+        index, name, uuid, raw = (field.strip() for field in fields)
+        value = reading(raw)
+        if not index.isdecimal() or not name or not uuid or value is None:
+            continue
+        sensor_id = hashlib.sha256(uuid.encode()).hexdigest()[:16]
+        sensors.append({'id': 'gpu:' + sensor_id, 'label': f'{name} · GPU {index}',
+                        'source': f'VM{vmid} · nvidia-smi', 'kind': 'gpu', 'value_c': value})
+    if not sensors:
+        raise ValueError('Guest GPU query returned no temperatures')
+    return sensors
+
+
+def collect_thermal(guest_gpu_vms=()):
+    gpu_deadline = time.monotonic() + GPU_COLLECTION_BUDGET_SECONDS
     temperatures, fans = hwmon_sensors()
     errors = []
     if shutil.which('ipmitool'):
@@ -121,6 +160,14 @@ def collect_thermal():
                     errors.append('SMART temperature unavailable for ' + Path(name).name)
         except (OSError, subprocess.SubprocessError, ValueError, KeyError):
             errors.append('SMART sensor discovery unavailable')
+    for vmid in dict.fromkeys(guest_gpu_vms):
+        if gpu_deadline - time.monotonic() < GPU_STATUS_TIMEOUT + GPU_QUERY_TIMEOUT:
+            errors.append('Remaining guest GPU queries skipped to publish the thermal sample on time')
+            break
+        try:
+            temperatures.extend(guest_gpu_temperatures(vmid))
+        except (OSError, subprocess.SubprocessError, ValueError, csv.Error):
+            errors.append(f'GPU temperatures unavailable for VM{vmid}')
     return {'measured_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'temperatures': temperatures, 'fans': fans, 'errors': errors}
 
@@ -141,4 +188,10 @@ def publish(data, output=OUTPUT):
 
 
 if __name__ == '__main__':
-    publish(collect_thermal())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--guest-gpu-vm', type=int, action='append', default=[], metavar='VMID',
+                        help='Read NVIDIA temperatures from this guest via qm (repeatable)')
+    args = parser.parse_args()
+    if any(vmid < 100 or vmid > 999_999_999 for vmid in args.guest_gpu_vm):
+        parser.error('--guest-gpu-vm must be between 100 and 999999999')
+    publish(collect_thermal(args.guest_gpu_vm))

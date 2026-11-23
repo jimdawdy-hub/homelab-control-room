@@ -63,6 +63,8 @@ anything in your lab. Never serve the repository root: it may contain your ignor
   and BMC readings, then hottest core. Averages use the available reported memory-bank sensors.
 - Fan RPM without graphs. Missing sensors are unavailable, never invented. Drive cards are omitted;
   raw temperature history can still include SMART readings for separate analysis.
+- Optional NVIDIA GPU temperatures from selected Proxmox guests with a working QEMU guest agent
+  and `nvidia-smi` inside the guest.
 - Resource snapshots every minute and thermal/history sampling every ten minutes, with 24-hour
   charts and 90-day daily JSONL retention. Cached readings retain their original timestamps; outages
   do not become fabricated chart samples.

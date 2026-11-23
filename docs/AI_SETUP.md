@@ -55,6 +55,8 @@ Guest collection is disabled in a generated probe unless `--guest-metrics` is se
 fixed Python resource query through QEMU's guest agent; the owner must opt in and understand that it
 executes inside a running guest. Keep unavailable guest metrics visibly unavailable. The optional
 verified guest SSH fallback is advanced; require the expected MAC and a separate restricted key.
+NVIDIA GPU temperature collection is a separate opt-in. Ask which guests the owner wants to query.
+Confirm that each selected guest has a working QEMU guest agent and `nvidia-smi`.
 
 Temperature selection uses what each host actually exposes. Never call an Intel package sensor
 Tdie/Tctl; retain the true source. DIMM/Optane averages are averages of available reported bank
