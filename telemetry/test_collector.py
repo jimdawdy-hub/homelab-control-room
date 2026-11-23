@@ -123,14 +123,16 @@ class HbaTempTests(unittest.TestCase):
 
 
 class HistoryTests(unittest.TestCase):
-    def test_appends_snapshot_and_prunes_only_expired_days(self):
+    def test_appends_thermal_data_and_prunes_only_expired_days(self):
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             snapshot = {'schema_version': 2, 'hosts': [{'name': 'compute-01',
                 'hba': {'roc_temp_c': 60}, 'thermal': {
                     'temperatures': [{'label': 'Tdie', 'value_c': 42}, {'label': 'Disk', 'value_c': 35}],
                     'fans': [{'label': 'FAN3', 'rpm': 9000}]}}]}
-            (data / 'metrics.json').write_text(json.dumps(snapshot))
+            full_snapshot = dict(snapshot, vms=[{'id': 123}], pbs={'datastores': []})
+            full_snapshot['hosts'] = [dict(snapshot['hosts'][0], cpu_percent=10, volumes=[])]
+            (data / 'metrics.json').write_text(json.dumps(full_snapshot))
             (data / 'history').mkdir()
             old, edge, junk = (data / 'history' / n for n in ('2026-07-01.jsonl', '2026-07-27.jsonl', 'notes.jsonl'))
             for path in (old, edge, junk):
@@ -141,8 +143,21 @@ class HistoryTests(unittest.TestCase):
             lines = (data / 'history' / '2026-10-25.jsonl').read_text().splitlines()
             self.assertEqual(len(lines), 2)
             self.assertEqual(json.loads(lines[0])['snapshot'], snapshot)
+            self.assertEqual(json.loads((data / 'metrics.json').read_text()), full_snapshot)
             self.assertFalse(old.exists())
             self.assertTrue(edge.exists() and junk.exists())
+
+    def test_legacy_host_and_error_survive_history_projection(self):
+        snapshot = {'host': {'name': 'compute-01', 'error': 'Node unavailable', 'cpu_percent': 10},
+                    'generated_at': '2026-10-25T16:00:00+00:00'}
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            (data / 'metrics.json').write_text(json.dumps(snapshot))
+            now = datetime.datetime.fromisoformat(snapshot['generated_at'])
+            history.log_snapshot(data, now)
+            record = json.loads((data / 'history' / '2026-10-25.jsonl').read_text())['snapshot']
+        self.assertEqual(record, {'hosts': [{'name': 'compute-01', 'error': 'Node unavailable'}],
+                                  'generated_at': snapshot['generated_at']})
 
 
 class SnapshotTests(unittest.TestCase):

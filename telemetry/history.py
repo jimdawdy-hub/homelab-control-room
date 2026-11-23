@@ -1,18 +1,26 @@
-"""Appends the current metrics snapshot to a daily JSON Lines file; prunes old days."""
+"""Append thermal readings to a daily JSON Lines file and prune old days."""
 import argparse
 import datetime
 import json
 from pathlib import Path
 
 RETENTION_DAYS = 90
+HOST_FIELDS = ('name', 'error', 'thermal', 'hba')
 
 
 def log_snapshot(data_dir, now=None, retention_days=RETENTION_DAYS):
     now = now or datetime.datetime.now(datetime.timezone.utc)
     snapshot = json.loads((data_dir / 'metrics.json').read_text())
+    hosts = snapshot.get('hosts', [snapshot.get('host')])
+    thermal_snapshot = {key: snapshot[key] for key in ('schema_version', 'generated_at') if key in snapshot}
+    thermal_snapshot['hosts'] = [
+        {key: host[key] for key in HOST_FIELDS if key in host}
+        for host in hosts if isinstance(host, dict)
+    ]
     history = data_dir / 'history'
     history.mkdir(exist_ok=True)
-    line = json.dumps({'logged_at': now.isoformat(), 'snapshot': snapshot}, separators=(',', ':'), allow_nan=False)
+    line = json.dumps({'logged_at': now.isoformat(), 'snapshot': thermal_snapshot},
+                      separators=(',', ':'), allow_nan=False)
     with open(history / f'{now:%Y-%m-%d}.jsonl', 'a') as handle:
         handle.write(line + '\n')
     cutoff = (now - datetime.timedelta(days=retention_days)).date()
